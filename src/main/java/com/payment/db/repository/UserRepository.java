@@ -9,13 +9,14 @@ import org.springframework.data.jpa.repository.Query;
 import com.payment.db.entities.User;
 
 public interface UserRepository extends JpaRepository<User, Serializable> {
-
-	Optional<User> findByUserName(String username);
+	@Query("select u from User u where u.userName = ?1 and u.status = ?2")
+	Optional<User> findByUserName(String username, String status);
 	
 	@Query("select u from User u where u.userId = ?1 and u.status = ?2")
 	Optional<User> findByUserId(Long userId, String status);
+	
 	Boolean existsByUserName(String username);
-
-//	  Boolean existsByEmail(String email);
+	
+	Boolean existsByUserId(Long id);
 
 }

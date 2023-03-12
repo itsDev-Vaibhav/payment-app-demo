@@ -7,6 +7,9 @@ import javax.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,11 +25,16 @@ import com.payment.rest.dto.request.TransactionRequest;
 import com.payment.rest.dto.responses.FailureResponse;
 import com.payment.rest.dto.responses.TransactionResponse;
 import com.payment.rest.exceptions.InsufficientBalanceException;
+import com.payment.rest.service.TransactionService;
+import com.payment.security.service.UserDetailsImpl;
 
 @RestController
 @CrossOrigin(origins = "*", maxAge = 3600)
 @RequestMapping("/api/v1/transactions")
 public class TransactionController {
+	
+	@Autowired
+	private TransactionService tService;
 	
 	@Autowired
 	private UserRepository userRepository;
@@ -35,11 +43,14 @@ public class TransactionController {
 	private TransactionsRepo transactionsRepo;
 	
 	@PostMapping("/transfer")
+	@PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
 	public ResponseEntity<?> doTransactions(@Valid @RequestBody TransactionRequest request) throws InsufficientBalanceException {
-		if(request.getTo() == request.getFrom()) {
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+		if(request.getTo() == userDetails.getId()) {
 			return new ResponseEntity<FailureResponse>(new FailureResponse(1, "FAILURE", "To and From id cannot be same."), HttpStatus.BAD_REQUEST);
 		}
-		Optional<User> findByUserId = userRepository.findByUserId(request.getFrom(), "Active");
+		Optional<User> findByUserId = userRepository.findByUserId(userDetails.getId(), "Active");
 		if(findByUserId.isPresent()) {
 			User user = findByUserId.get();
 			Optional<User> findByUserToId = userRepository.findByUserId(request.getTo(), "Active");
@@ -54,7 +65,7 @@ public class TransactionController {
 					transactions.setTransactionTo(request.getTo());
 					transactions.setAmount(request.getAmount());
 					transactions.setTranasactionDescription(request.getTranasactionDescription());
-					transactions.setTransactionBy(request.getFrom());
+					transactions.setTransactionBy(userDetails.getId());
 					TransactionResponse response = new TransactionResponse(0, "SUCCESS", "");
 					try {
 						 Transactions save = transactionsRepo.save(transactions);

@@ -26,6 +26,13 @@ public class FailureResponse {
 		this();
 		this.errorDescription = errorDescription;
 	}
+	
+	
+	public FailureResponse(Integer statusCode, String errorDescription) {
+		this();
+		this.statusCode = statusCode;
+		this.errorDescription = errorDescription;
+	}
 
 
 	public FailureResponse(Integer statusCode, String statusDescription, String errorDescription) {

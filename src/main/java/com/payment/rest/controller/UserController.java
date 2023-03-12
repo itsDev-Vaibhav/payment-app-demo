@@ -38,6 +38,7 @@ import com.payment.rest.dto.responses.FailureResponse;
 import com.payment.rest.dto.responses.LoginResponse;
 import com.payment.rest.dto.responses.UserIdResponse;
 import com.payment.rest.dto.responses.UserResponse;
+import com.payment.rest.service.UserService;
 import com.payment.security.jwt.JwtUtils;
 import com.payment.security.service.UserDetailsImpl;
 import com.payment.rest.dto.request.PatchRequest;
@@ -49,6 +50,9 @@ import com.payment.utils.AppUtils;
 @CrossOrigin(origins = "*", maxAge = 3600)
 @RequestMapping("/api/v1")
 public class UserController {
+	
+	@Autowired
+	private UserService service;
 	
 	@Autowired
 	private UserRepository userRepository;
@@ -74,6 +78,8 @@ public class UserController {
 		if (userRepository.existsByUserName(signUpRequest.getUserName())) {
 			return ResponseEntity.badRequest().body(new UserResponse(1, "FAILURE", "Error: Username is already taken!"));
 		}
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
 		// Create new user's account
 		User user = new User();
 		user.setUserName(signUpRequest.getUserName());
@@ -82,7 +88,7 @@ public class UserController {
 		user.setBalance(0.0);
 		String str = AppUtils.generatePin();
 		user.setUserPin(encoder.encode(str));
-		user.setCreatedBy("Admin");
+		user.setCreatedBy(userDetails.getUsername());
 		Set<Role> roles = new HashSet<>();
 		Role userRole = roleRepository.findByRoleName(ERole.ROLE_USER);
 		roles.add(userRole);
@@ -96,22 +102,18 @@ public class UserController {
 			response.setErrorDescription("");
 			response.setUserPin(str);
 		}
-		return ResponseEntity.ok(response);
+		return new ResponseEntity<UserResponse>(response, HttpStatus.CREATED);
 	}
 	
 	@PostMapping("/signin")
 	public ResponseEntity<?> authenticateUser(@Valid @RequestBody UserLoginRequest loginRequest) {
-
 		Authentication authentication = authenticationManager.authenticate(
 				new UsernamePasswordAuthenticationToken(loginRequest.getUserName(), loginRequest.getPin()));
-
 		SecurityContextHolder.getContext().setAuthentication(authentication);
 		String jwt = jwtUtils.generateJwtToken(authentication);
-
 		UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
 		List<String> roles = userDetails.getAuthorities().stream().map(item -> item.getAuthority())
 				.collect(Collectors.toList());
-
 		return ResponseEntity.ok(
 				new LoginResponse(jwt, userDetails.getId(), userDetails.getUsername(), roles));
 	}
@@ -126,15 +128,20 @@ public class UserController {
 	@GetMapping("/user/{userId}")
 	@PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
 	public ResponseEntity<?> getUser(@PathVariable(name = "userId") Long id) {
-		Optional<User> findByUserId = userRepository.findByUserId(id, AppUtils.ACTIVE_STATUS);
-		if(findByUserId.isPresent()) {
-			User user = findByUserId.get();
-			UserIdResponse response = new UserIdResponse();
-			response.setTransactions(transactionsRepo.findByTransactionByOrTransactionTo(id));
-			BeanUtils.copyProperties(user, response);
-			return new ResponseEntity<UserIdResponse>(response, HttpStatus.OK);
+		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+		UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+		if(userDetails.getId() == id || userDetails.getId() == 0) {
+			Optional<User> findByUserId = userRepository.findByUserId(id, AppUtils.ACTIVE_STATUS);
+			if(findByUserId.isPresent()) {
+				User user = findByUserId.get();
+				UserIdResponse response = new UserIdResponse();
+				response.setTransactions(transactionsRepo.findByTransactionByOrTransactionTo(id));
+				BeanUtils.copyProperties(user, response);
+				return new ResponseEntity<UserIdResponse>(response, HttpStatus.OK);
+			}
+			return new ResponseEntity<FailureResponse>(new FailureResponse(String.format("User with given user id : %d not found!", id)), HttpStatus.BAD_REQUEST);
 		}
-		return new ResponseEntity<FailureResponse>(new FailureResponse(String.format("User with given user id : %d not found!", id)), HttpStatus.BAD_REQUEST);
+		return new ResponseEntity<FailureResponse>(new FailureResponse(HttpStatus.UNAUTHORIZED.value(),String.format("You don't enough permissions!", id)), HttpStatus.UNAUTHORIZED);
 	}
 	
 	
@@ -167,6 +174,4 @@ public class UserController {
 		}
 		return new ResponseEntity<FailureResponse>(new FailureResponse(String.format("User with given user id : %d not found!", id)), HttpStatus.BAD_REQUEST);
 	}
-	
-
 }
